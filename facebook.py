@@ -43,6 +43,7 @@ import hmac
 import base64
 import logging
 import socket
+import requests
 
 # Find a JSON parser
 try:
@@ -90,6 +91,8 @@ class GraphAPI(object):
     for the active user from the cookie saved by the SDK.
 
     """
+    GRAPH_URL = 'https://graph.facebook.com'
+
     def __init__(self, access_token=None, timeout=None):
         self.access_token = access_token
         self.timeout = timeout
@@ -281,46 +284,31 @@ class GraphAPI(object):
         arguments.
 
         """
-        args = args or {}
+        url = '/'.join((self.GRAPH_URL, path))
+        if post_args:
+            res = requests.post(url, params=args, timeout=self.timeout, data=post_args)
+        else:
+            res = requests.get(url, params=args, timeout=self.timeout)
 
-        if self.access_token:
-            if post_args is not None:
-                post_args["access_token"] = self.access_token
-            else:
-                args["access_token"] = self.access_token
-        post_data = None if post_args is None else urllib.urlencode(post_args)
-        try:
-            file = urllib2.urlopen("https://graph.facebook.com/" + path + "?" +
-                                   urllib.urlencode(args),
-                                   post_data, timeout=self.timeout)
-        except urllib2.HTTPError, e:
-            response = _parse_json(e.read())
-            raise GraphAPIError(response)
-        except TypeError:
-            # Timeout support for Python <2.6
-            if self.timeout:
-                socket.setdefaulttimeout(self.timeout)
-            file = urllib2.urlopen("https://graph.facebook.com/" + path + "?" +
-                                   urllib.urlencode(args), post_data)
-        try:
-            fileInfo = file.info()
-            if fileInfo.maintype == 'text':
-                response = _parse_json(file.read())
-            elif fileInfo.maintype == 'image':
-                mimetype = fileInfo['content-type']
-                response = {
-                    "data": file.read(),
-                    "mime-type": mimetype,
-                    "url": file.url,
-                }
-            else:
-                raise GraphAPIError('Maintype was not text or image')
-        finally:
-            file.close()
-        if response and isinstance(response, dict) and response.get("error"):
-            raise GraphAPIError(response["error"]["type"],
-                                response["error"]["message"])
-        return response
+        if res.status_code != 200:
+            try:
+                raise GraphAPIError(res.json)
+            except ValueError:
+                raise GraphAPIError("Failed to decode JSON response: %s" % res.text)
+
+        maintype = res.headers['content-type'].split('/')[0]
+        if maintype == 'text':
+            try:
+                result = res.json
+            except ValueError:
+                raise GraphError("Failed to decode JSON response: %s" % res.text)
+        elif maintype == 'image':
+            result = {
+                'data': res.content,
+                'mime-type': res.headers['content-type'],
+                'url': res.url,
+            }
+        return result
 
     def fql(self, query, args=None, post_args=None):
         """FQL query.
