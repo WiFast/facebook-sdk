@@ -316,41 +316,20 @@ class GraphAPI(object):
         Example query: "SELECT affiliations FROM user WHERE uid = me()"
 
         """
-        args = args or {}
-        if self.access_token:
-            if post_args is not None:
-                post_args["access_token"] = self.access_token
-            else:
-                args["access_token"] = self.access_token
-        post_data = None if post_args is None else urllib.urlencode(post_args)
+        if post_args:
+            post_args['access_token'] = self.access_token
+        else:
+            args['access_token'] = self.access_token
 
-        args["q"] = query
-        args["format"] = "json"
+        args.update({
+            'q': query,
+            'format': json,
+        })
 
-        try:
-            file = urllib2.urlopen("https://graph.facebook.com/fql?" +
-                                   urllib.urlencode(args),
-                                   post_data, timeout=self.timeout)
-        except TypeError:
-            # Timeout support for Python <2.6
-            if self.timeout:
-                socket.setdefaulttimeout(self.timeout)
-            file = urllib2.urlopen("https://graph.facebook.com/fql?" +
-                                   urllib.urlencode(args),
-                                   post_data)
-
-        try:
-            content = file.read()
-            response = _parse_json(content)
-            #Return a list if success, return a dictionary if failed
-            if type(response) is dict and "error_code" in response:
-                raise GraphAPIError(response)
-        except Exception, e:
-            raise e
-        finally:
-            file.close()
-
-        return response
+        result = self.request('fql', args, post_args)
+        if isinstance(result, dict) and 'error_code' in result:
+            raise GraphAPIError(result)
+        return result
 
     def extend_access_token(self, app_id, app_secret):
         """
