@@ -284,30 +284,35 @@ class GraphAPI(object):
         arguments.
 
         """
+        args = args or {}
         url = '/'.join((self.GRAPH_URL, path))
         if post_args:
+            if self.access_token:
+                post_args["access_token"] = self.access_token
             res = requests.post(url, params=args, timeout=self.timeout, data=post_args)
         else:
+            if self.access_token:
+                args["access_token"] = self.access_token
             res = requests.get(url, params=args, timeout=self.timeout)
 
         if res.status_code != 200:
             try:
-                raise GraphAPIError(res.json)
+                raise GraphAPIError(res.json())
             except ValueError:
                 raise GraphAPIError("Failed to decode JSON response: %s" % res.text)
 
         maintype = res.headers['content-type'].split('/')[0]
-        if maintype == 'text':
-            try:
-                result = res.json
-            except ValueError:
-                raise GraphError("Failed to decode JSON response: %s" % res.text)
-        elif maintype == 'image':
+        if maintype == 'image':
             result = {
                 'data': res.content,
                 'mime-type': res.headers['content-type'],
                 'url': res.url,
             }
+        else:
+            try:
+                result = res.json()
+            except ValueError:
+                raise GraphError("Failed to decode JSON response: %s" % res.text)
         return result
 
     def fql(self, query, args=None, post_args=None):
